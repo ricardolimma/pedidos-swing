@@ -1,63 +1,70 @@
-# Cliente Swing – Pedidos (OrderClientFrame)
+# Cliente Desktop (Swing) — Pedidos
 
-Aplicativo **Java Swing** que envia pedidos para um backend HTTP e faz **polling** periódico para consultar o **status** de processamento.  
-Ele usa **OkHttp** para as chamadas HTTP e **Jackson** para serialização JSON.
+Aplicação **Java 8 + Swing** que envia pedidos para o **backend** e realiza **polling** do status por HTTP.
 
-> **Arquitetura resumida**
-> - **Cliente (Swing)**: envia `POST /api/pedidos` e, a cada 3s, chama `GET /api/pedidos/status/{id}` para atualizar a tabela.
-> - **Backend (Spring Boot)**: recebe o pedido, retorna `202 Accepted` com o `id`, e processa o pedido de forma assíncrona (ex.: via RabbitMQ). O status é exposto por HTTP.
-
----
-
-## ✨ Funcionalidades
-
-- Formulário com **produto** e **quantidade**.
-- Gera um **UUID** local para o pedido e envia para o backend (`POST /api/pedidos`).
-- Exibe os pedidos e seus **status** em uma tabela, com **polling** a cada 3 segundos.
-- Atualização do status em tempo real (até um estado final, como **SUCESSO** ou **FALHA**).
+> ⚠️ **Atenção:** Este cliente **depende do backend**. Sem o serviço Spring Boot rodando, o app não funciona.
+> Siga primeiro o README do backend aqui: **<https://github.com/ricardolimma/pedidos-backend>**
 
 ---
 
 ## 🧩 Tecnologias
-
 - **Java 8**
 - **Swing** (UI)
 - **OkHttp** (cliente HTTP)
 - **Jackson** (JSON)
-- **Executors/ScheduledExecutorService** (agendamento do polling)
+- **Executors / ScheduledExecutorService** (polling periódico)
 
 ---
 
-## 🗂️ Estrutura do Cliente
-
-Classe principal do cliente: `com.swing.view.OrderClientFrame`
-
-- **Campos principais**
-    - `baseUrl`: URL base do backend (padrão: `http://localhost:8080/api/pedidos`)
-    - `OkHttpClient http`: cliente HTTP
-    - `ObjectMapper mapper`: serialização JSON
-    - `ScheduledExecutorService scheduler`: agenda `pollStatus()` a cada 3s
-    - `DefaultTableModel model` + `JTable table`: renderizam `ID` e `Status`
-    - `Set<String> pendentes`: controla IDs em acompanhamento
-
-- **Fluxo**
-    1. Usuário preenche **Produto** e **Qtd** e clica **Enviar Pedido**.
-    2. Cliente cria um `UUID`, monta o JSON e faz `POST /api/pedidos`.
-    3. Se o backend responder **202**, o pedido entra na tabela como **ENVIADO, AGUARDANDO PROCESSO** e o ID é adicionado a `pendentes`.
-    4. O **polling** chama `GET /api/pedidos/status/{id}` para cada ID pendente e atualiza a tabela conforme o retorno.
+## 🚦 Pré-requisitos
+- **JDK 8** instalado e configurado no PATH
+- **Maven 3.8+**
+- **Backend rodando** (clonado e iniciado a partir do repositório indicado acima)
 
 ---
 
-## 🔌 Endpoints esperados no Backend
+## 🔗 Conectando ao Backend
+O cliente usa por padrão a URL:
+```
+http://localhost:8080/api/pedidos
+```
+Se o backend estiver em outra máquina/porta, edite a constante `baseUrl` na classe:
+```
+src/main/java/com/swing/view/OrderClientFrame.java
+```
 
-O cliente assume os seguintes endpoints:
+---
 
-- **POST `/api/pedidos`**  
-  **Body** (JSON):
-  ```json
-  {
-    "id": "4c8a3312-7c5e-4c4a-8c3f-0b2c9f1f2c11",
-    "produto": "Teclado Mecânico",
-    "quantidade": 2,
-    "dataCriacao": "2025-09-29T12:34:56"
-  }
+## ▶️ Como rodar o cliente
+```bash
+# dentro do diretório do projeto Swing
+mvn -q exec:java
+```
+ou empacote e rode:
+```bash
+mvn -q clean package
+java -jar target/pedidos-swing-0.0.1.jar
+```
+
+---
+
+## 🧪 Fluxo de teste manual
+1. **Garanta o backend no ar** (veja o README do backend).
+2. Abra o app Swing.
+3. Informe *Produto* e *Quantidade* e clique em **Enviar Pedido**.
+4. Veja o **ID** aparecer na tabela e o **status** evoluir (RECEBIDO → PROCESSANDO → SUCESSO/FALHA).
+
+---
+
+## 🛠️ Configuração opcional
+- **Timeouts / Proxy HTTP**: se necessário, configure um `OkHttpClient` customizado no `OrderClientFrame`.
+- **Cores/estilo**: ajuste os renderers da tabela para o tema que preferir.
+
+---
+
+## ❓Resolução de problemas
+- **“Erro de conexão” ao enviar pedido** → o backend não está acessível no `baseUrl` informado.
+- **Status não muda para SUCESSO/FALHA** → confirme que o cliente está usando **o ID retornado pelo backend (HTTP 202)** para fazer o polling.
+- **HTTP 400 ao enviar** → verifique os campos obrigatórios (*produto* e *quantidade > 0*).
+
+
