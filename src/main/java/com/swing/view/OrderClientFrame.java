@@ -113,6 +113,20 @@ public class OrderClientFrame extends JFrame {
         add(scroll, BorderLayout.CENTER);
     }
 
+    // POJO Pedido para envio
+    static class Pedido {
+        public String id;
+        public String produto;
+        public int quantidade;
+        public String dataCriacao;
+        public Pedido(String id, String produto, int quantidade, String dataCriacao) {
+            this.id = id;
+            this.produto = produto;
+            this.quantidade = quantidade;
+            this.dataCriacao = dataCriacao;
+        }
+    }
+
     private void enviarPedido() {
         final String produto = txtProduto.getText().trim();
         final String qtdStr = txtQuantidade.getText().trim();
@@ -127,13 +141,17 @@ public class OrderClientFrame extends JFrame {
             showMessage("Quantidade inválida.", "Atenção", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        Map<String, Object> body = new HashMap<>();
-        body.put("produto", produto);
-        body.put("quantidade", quantidade);
+        if (quantidade <= 0) {
+            showMessage("Quantidade deve ser maior que zero.", "Atenção", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        final String id = UUID.randomUUID().toString();
+        final String dataCriacao = java.time.LocalDateTime.now().toString();
+        Pedido pedido = new Pedido(id, produto, quantidade, dataCriacao);
         MediaType json = MediaType.parse("application/json");
         Request req = new Request.Builder()
                 .url(baseUrl)
-                .post(RequestBody.create(json, toJson(body)))
+                .post(RequestBody.create(json, toJson(pedido)))
                 .build();
         http.newCall(req).enqueue(new Callback() {
             @Override public void onFailure(Call call, IOException e) {
@@ -143,12 +161,11 @@ public class OrderClientFrame extends JFrame {
             }
             @Override public void onResponse(Call call, Response response) throws IOException {
                 if (response.code() == 202) {
-                    Map<?, ?> res = mapper.readValue(response.body().string(), Map.class);
-                    final String id = String.valueOf(res.get("id"));
+                    // Backend retorna o id, mas já temos o id gerado
                     SwingUtilities.invokeLater(() -> {
                         txtProduto.setText("");
                         txtQuantidade.setText("");
-                        model.addRow(new Object[]{id, "Pendente"});
+                        model.addRow(new Object[]{id, "ENVIADO, AGUARDANDO PROCESSO"});
                         pendentes.add(id);
                     });
                 } else {
@@ -159,44 +176,66 @@ public class OrderClientFrame extends JFrame {
         });
     }
 
-    /**
-     * Serializa um objeto para JSON.
-     */
-    private String toJson(Map<String, Object> map) {
+    private String toJson(Object obj) {
         try {
-            return mapper.writeValueAsString(map);
+            return mapper.writeValueAsString(obj);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-
     private void pollStatus() {
-        if (pendentes.isEmpty()) return;
-        Request req = new Request.Builder()
-                .url(baseUrl + "/status?ids=" + String.join(",", pendentes))
-                .build();
-        http.newCall(req).enqueue(new Callback() {
-            @Override public void onFailure(Call call, IOException e) { }
-            @Override public void onResponse(Call call, Response response) throws IOException {
-                if (response.isSuccessful()) {
-                    List<?> lista = mapper.readValue(response.body().string(), List.class);
-                    for (Object o : lista) {
-                        Map<?, ?> map = (Map<?, ?>) o;
-                        final String id = String.valueOf(map.get("id"));
-                        final String status = String.valueOf(map.get("status"));
+        if (pendentes.isEmpty()) {
+            return;
+        }
+        for (String id : new ArrayList<>(pendentes)) {
+            Request req = new Request.Builder()
+                    .url(baseUrl + "/status/" + id)
+                    .build();
+            http.newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, IOException e) {
+                    System.out.println("Falha ao consultar status do pedido " + id + ": " + e.getMessage());
+                }
+                @Override public void onResponse(Call call, Response response) throws IOException {
+                    if (response.isSuccessful()) {
+                        String json = response.body().string();
+                        Map<?, ?> map = null;
+                        try {
+                            map = mapper.readValue(json, Map.class);
+                        } catch (Exception ex) {
+                            System.out.println("Erro ao fazer parsing do JSON: " + ex.getMessage());
+                            System.out.println("JSON recebido: " + json);
+                            return;
+                        }
+                        final String status = String.valueOf(map.get("status")).trim();
                         SwingUtilities.invokeLater(() -> updateOrderStatus(id, status));
+                    } else {
+                        System.out.println("Resposta não OK do backend para pedido " + id + ": " + response.code());
                     }
                 }
-            }
-        });
+            });
+        }
     }
 
 
     private void updateOrderStatus(String id, String status) {
+        boolean found = false;
+        String statusExibido = status;
+        if (statusExibido != null) statusExibido = statusExibido.trim();
+        System.out.println("Status recebido do backend para pedido " + id + ": '" + statusExibido + "'");
+        if (statusExibido == null || statusExibido.isEmpty()) {
+            statusExibido = "ENVIADO, AGUARDANDO PROCESSO";
+        }
+        String statusLower = statusExibido.toLowerCase();
+        boolean isFinal = statusLower.contains("suces") || statusLower.contains("falha");
         for (int i = 0; i < model.getRowCount(); i++) {
-            if (model.getValueAt(i, 0).equals(id)) {
-                model.setValueAt(status, i, 1);
+            String tableId = String.valueOf(model.getValueAt(i, 0)).trim();
+            if (tableId.equals(id)) {
+                model.setValueAt(statusExibido, i, 1);
+                if (isFinal) {
+                    pendentes.remove(id);
+                }
+                found = true;
                 break;
             }
         }
