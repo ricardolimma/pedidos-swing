@@ -20,7 +20,7 @@ Ele usa **OkHttp** para as chamadas HTTP e **Jackson** para serialização JSON.
 
 ## 🧩 Tecnologias
 
-- **Java 17+** (funciona em 21 também)
+- **Java 8**
 - **Swing** (UI)
 - **OkHttp** (cliente HTTP)
 - **Jackson** (JSON)
